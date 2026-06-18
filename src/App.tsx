@@ -1,10 +1,29 @@
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Brush,
+  CircleIcon,
+  Download,
+  Eye,
+  EyeOff,
+  ImagePlus,
+  Layers,
+  Lock,
+  MousePointer2,
+  PaintBucket,
+  Plus,
+  Save,
+  Shapes,
+  Slash,
+  Square,
+  Trash2,
+  Type,
+  Upload,
+} from "lucide-react";
 import {
   Canvas,
   Circle,
   FabricImage,
   FabricObject,
-  FabricText,
   Line,
   PencilBrush,
   Point,
@@ -49,6 +68,29 @@ const FONT_OPTIONS = [
   "Meiryo",
   "Noto Sans JP",
 ];
+
+type IconButtonProps = {
+  active?: boolean;
+  children: ReactNode;
+  label: string;
+  onClick: () => void;
+  tone?: "default" | "danger" | "primary";
+};
+
+function IconButton({ active = false, children, label, onClick, tone = "default" }: IconButtonProps) {
+  return (
+    <button
+      aria-label={label}
+      className={`icon-button ${active ? "active" : ""} ${tone}`}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {children}
+      <span>{label}</span>
+    </button>
+  );
+}
 
 function isLayeredObject(object: FabricObject): object is LayeredObject {
   return "layerId" in object || "role" in object;
@@ -634,18 +676,24 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="top-bar">
-        <div>
-          <h1>GazouEditor</h1>
-          <p>{message}</p>
+      <header className="app-header">
+        <div className="brand-block">
+          <div className="brand-mark">
+            <Layers size={20} />
+          </div>
+          <div>
+            <h1>GazouEditor</h1>
+            <p>{message}</p>
+          </div>
         </div>
-        <button className="primary-action" onClick={exportPng} type="button">
-          PNG書き出し
+        <button className="export-button" onClick={exportPng} type="button">
+          <Download size={18} />
+          <span>PNG書き出し</span>
         </button>
       </header>
 
       <section className="workspace">
-        <aside className="toolbar" aria-label="ツール">
+        <aside className="tool-rail" aria-label="ツール">
           <input
             ref={baseInputRef}
             accept="image/*"
@@ -660,62 +708,74 @@ export default function App() {
             onChange={handleAddImage}
             type="file"
           />
-          <button onClick={() => baseInputRef.current?.click()} type="button">
-            ベース読込
-          </button>
-          <button
-            className={tool === "select" ? "active" : ""}
-            onClick={() => setToolAndMessage("select")}
-            type="button"
-          >
-            選択
-          </button>
-          <button onClick={() => imageInputRef.current?.click()} type="button">
-            画像追加
-          </button>
-          <button onClick={addTextbox} type="button">
-            テキスト
-          </button>
-          <button onClick={addRectangle} type="button">
-            四角形
-          </button>
-          <button onClick={addCircle} type="button">
-            円
-          </button>
-          <button className={tool === "line" ? "active" : ""} onClick={startLineTool} type="button">
-            直線
-          </button>
-          <button
-            className={tool === "pen" ? "active" : ""}
-            onClick={() => setToolAndMessage("pen")}
-            type="button"
-          >
-            ペン
-          </button>
-          <button
-            className={tool === "bucket" ? "active" : ""}
-            onClick={() => setToolAndMessage("bucket")}
-            type="button"
-          >
-            バケツ
-          </button>
-          <button onClick={deleteSelectedObject} type="button">
-            削除
-          </button>
+          <div className="tool-group">
+            <IconButton label="ベース読込" onClick={() => baseInputRef.current?.click()} tone="primary">
+              <Upload size={19} />
+            </IconButton>
+            <IconButton active={tool === "select"} label="選択" onClick={() => setToolAndMessage("select")}>
+              <MousePointer2 size={19} />
+            </IconButton>
+          </div>
+
+          <div className="tool-group">
+            <IconButton label="画像追加" onClick={() => imageInputRef.current?.click()}>
+              <ImagePlus size={19} />
+            </IconButton>
+            <IconButton label="テキスト" onClick={addTextbox}>
+              <Type size={19} />
+            </IconButton>
+            <IconButton label="四角形" onClick={addRectangle}>
+              <Square size={19} />
+            </IconButton>
+            <IconButton label="円" onClick={addCircle}>
+              <CircleIcon size={19} />
+            </IconButton>
+            <IconButton active={tool === "line"} label="直線" onClick={startLineTool}>
+              <Slash size={19} />
+            </IconButton>
+          </div>
+
+          <div className="tool-group">
+            <IconButton active={tool === "pen"} label="ペン" onClick={() => setToolAndMessage("pen")}>
+              <Brush size={19} />
+            </IconButton>
+            <IconButton active={tool === "bucket"} label="バケツ" onClick={() => setToolAndMessage("bucket")}>
+              <PaintBucket size={19} />
+            </IconButton>
+            <IconButton label="削除" onClick={deleteSelectedObject} tone="danger">
+              <Trash2 size={19} />
+            </IconButton>
+          </div>
         </aside>
 
-        <div className="canvas-panel" onClick={handleCanvasClick} ref={canvasPanelRef}>
-          <div className="canvas-stage">
-            <canvas ref={canvasElementRef} />
+        <section className="canvas-area" aria-label="編集キャンバス">
+          <div className="canvas-meta">
+            <div>
+              <span className="meta-label">編集中</span>
+              <strong>{activeLayer?.name || "レイヤー未選択"}</strong>
+            </div>
+            <div>
+              <span className="meta-label">ツール</span>
+              <strong>{tool === "select" ? "選択" : tool}</strong>
+            </div>
           </div>
-        </div>
+          <div className="canvas-panel" onClick={handleCanvasClick} ref={canvasPanelRef}>
+            <div className="canvas-stage">
+              <canvas ref={canvasElementRef} />
+            </div>
+          </div>
+        </section>
 
-        <aside className="side-panel">
-          <section>
-            <div className="panel-heading">
-              <h2>レイヤー</h2>
-              <button onClick={addLayer} type="button">
-                追加
+        <aside className="inspector">
+          <section className="panel">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Stack</span>
+                <h2>レイヤー</h2>
+              </div>
+              <button className="small-icon-button" onClick={addLayer} title="レイヤー追加" type="button">
+                <Plus size={17} />
+                <span>追加</span>
               </button>
             </div>
             <div className="layer-list">
@@ -732,15 +792,22 @@ export default function App() {
                     onClick={() => setActiveLayerId(layer.id)}
                     type="button"
                   >
+                    {layer.role === "base" ? <Lock size={15} /> : <Shapes size={15} />}
                     {layerLabel(layer)}
                   </button>
-                  <button onClick={() => toggleLayerVisibility(layer.id)} type="button">
-                    {layer.visible ? "表示" : "非表示"}
+                  <button
+                    aria-label={layer.visible ? `${layer.name}を非表示` : `${layer.name}を表示`}
+                    className="mini-button"
+                    onClick={() => toggleLayerVisibility(layer.id)}
+                    title={layer.visible ? "非表示" : "表示"}
+                    type="button"
+                  >
+                    {layer.visible ? <Eye size={15} /> : <EyeOff size={15} />}
                   </button>
-                  <button disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, -1)} type="button">
+                  <button className="mini-button" disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, -1)} type="button">
                     ↑
                   </button>
-                  <button disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, 1)} type="button">
+                  <button className="mini-button" disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, 1)} type="button">
                     ↓
                   </button>
                 </div>
@@ -748,18 +815,23 @@ export default function App() {
             </div>
           </section>
 
-          <section>
-            <h2>プロパティ</h2>
-            <label>
-              線・文字色
-              <input onChange={(event) => setColor(event.target.value)} type="color" value={color} />
+          <section className="panel">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Style</span>
+                <h2>プロパティ</h2>
+              </div>
+            </div>
+            <label className="field color-field">
+              <span>線・文字色</span>
+              <input aria-label="線・文字色" onChange={(event) => setColor(event.target.value)} type="color" value={color} />
             </label>
-            <label>
-              塗り色
-              <input onChange={(event) => setFillColor(event.target.value)} type="color" value={fillColor} />
+            <label className="field color-field">
+              <span>塗り色</span>
+              <input aria-label="塗り色" onChange={(event) => setFillColor(event.target.value)} type="color" value={fillColor} />
             </label>
-            <label>
-              線幅
+            <label className="field">
+              <span>線幅</span>
               <input
                 max="40"
                 min="1"
@@ -767,17 +839,17 @@ export default function App() {
                 type="range"
                 value={strokeWidth}
               />
-              <span>{strokeWidth}px</span>
+              <strong className="value-chip">{strokeWidth}px</strong>
             </label>
-            <label>
-              線種
+            <label className="field">
+              <span>線種</span>
               <select onChange={(event) => setBrushKind(event.target.value as BrushKind)} value={brushKind}>
                 <option value="normal">通常線</option>
                 <option value="pressure">停止で太い線</option>
               </select>
             </label>
-            <label>
-              フォント
+            <label className="field">
+              <span>フォント</span>
               <select onChange={(event) => setFontFamily(event.target.value)} value={fontFamily}>
                 {FONT_OPTIONS.map((font) => (
                   <option key={font} value={font}>
@@ -786,8 +858,9 @@ export default function App() {
                 ))}
               </select>
             </label>
-            <div className="selection-summary">
-              選択中: {selectedObject ? selectedObject.type || "オブジェクト" : "なし"}
+            <div className="selection-card">
+              <span>選択中</span>
+              <strong>{selectedObject ? selectedObject.type || "オブジェクト" : "なし"}</strong>
             </div>
           </section>
         </aside>
