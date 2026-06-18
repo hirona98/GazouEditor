@@ -6,7 +6,6 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
-  Layers,
   Lock,
   MousePointer2,
   PaintBucket,
@@ -74,14 +73,14 @@ type IconButtonProps = {
   children: ReactNode;
   label: string;
   onClick: () => void;
-  tone?: "default" | "danger" | "primary";
+  tone?: "default" | "primary";
 };
 
 function IconButton({ active = false, children, label, onClick, tone = "default" }: IconButtonProps) {
   return (
     <button
       aria-label={label}
-      className={`icon-button ${active ? "active" : ""} ${tone}`}
+      className={`icon-button ${active ? "is-active" : ""} ${tone === "primary" ? "is-primary" : ""}`}
       onClick={onClick}
       title={label}
       type="button"
@@ -225,6 +224,7 @@ export default function App() {
   const [strokeWidth, setStrokeWidth] = useState(6);
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0]);
   const [brushKind, setBrushKind] = useState<BrushKind>("normal");
+  const [mobilePanel, setMobilePanel] = useState<"canvas" | "layers" | "props">("canvas");
   const [selectedObject, setSelectedObject] = useState<LayeredObject | null>(null);
   const [message, setMessage] = useState("ベース画像を読み込んで編集を開始します。");
 
@@ -674,197 +674,217 @@ export default function App() {
     }
   };
 
+  const toolPanel = () => (
+    <aside className="tool-rail" aria-label="ツール">
+      <input
+        ref={baseInputRef}
+        accept="image/*"
+        className="file-input"
+        onChange={handleBaseImage}
+        type="file"
+      />
+      <input
+        ref={imageInputRef}
+        accept="image/*"
+        className="file-input"
+        onChange={handleAddImage}
+        type="file"
+      />
+      <button className="primary-button full-width" onClick={exportPng} type="button">
+        <Upload size={16} />
+        <span>PNG書き出し</span>
+      </button>
+
+      <div className="panel-title tool-panel-title">
+        <span>ツール</span>
+      </div>
+
+      <div className="tool-group">
+        <IconButton label="ベース読込" onClick={() => baseInputRef.current?.click()} tone="primary">
+          <Download size={17} />
+        </IconButton>
+        <IconButton active={tool === "select"} label="選択" onClick={() => setToolAndMessage("select")}>
+          <MousePointer2 size={17} />
+        </IconButton>
+      </div>
+
+      <div className="tool-group">
+        <IconButton label="画像追加" onClick={() => imageInputRef.current?.click()}>
+          <ImagePlus size={17} />
+        </IconButton>
+        <IconButton label="テキスト" onClick={addTextbox}>
+          <Type size={17} />
+        </IconButton>
+        <IconButton label="四角形" onClick={addRectangle}>
+          <Square size={17} />
+        </IconButton>
+        <IconButton label="円" onClick={addCircle}>
+          <CircleIcon size={17} />
+        </IconButton>
+        <IconButton active={tool === "line"} label="直線" onClick={startLineTool}>
+          <Slash size={17} />
+        </IconButton>
+      </div>
+
+      <div className="tool-group">
+        <IconButton active={tool === "pen"} label="ペン" onClick={() => setToolAndMessage("pen")}>
+          <Brush size={17} />
+        </IconButton>
+        <IconButton active={tool === "bucket"} label="バケツ" onClick={() => setToolAndMessage("bucket")}>
+          <PaintBucket size={17} />
+        </IconButton>
+        <IconButton label="削除" onClick={deleteSelectedObject}>
+          <Trash2 size={17} />
+        </IconButton>
+      </div>
+    </aside>
+  );
+
+  const layerPanel = () => (
+    <section className="panel layer-panel">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">Layer</span>
+          <h2>レイヤー</h2>
+        </div>
+        <button className="ghost-button small-icon-button" onClick={addLayer} title="レイヤー追加" type="button">
+          <Plus size={16} />
+          <span>追加</span>
+        </button>
+      </div>
+      <div className="layer-list">
+        {layers.map((layer) => (
+          <div
+            className={`layer-row ${activeLayerId === layer.id ? "selected" : ""} ${layer.role === "base" ? "locked" : ""}`}
+            key={layer.id}
+          >
+            <button
+              className="layer-name"
+              disabled={layer.role === "base"}
+              onClick={() => setActiveLayerId(layer.id)}
+              type="button"
+            >
+              {layer.role === "base" ? <Lock size={14} /> : <Shapes size={14} />}
+              {layerLabel(layer)}
+            </button>
+            <button
+              aria-label={layer.visible ? `${layer.name}を非表示` : `${layer.name}を表示`}
+              className="mini-button"
+              onClick={() => toggleLayerVisibility(layer.id)}
+              title={layer.visible ? "非表示" : "表示"}
+              type="button"
+            >
+              {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
+            <button className="mini-button" disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, -1)} type="button">
+              ↑
+            </button>
+            <button className="mini-button" disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, 1)} type="button">
+              ↓
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
+  const propsPanel = () => (
+    <section className="panel props-panel">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">Style</span>
+          <h2>プロパティ</h2>
+        </div>
+      </div>
+      <label className="field color-field">
+        <span>線・文字色</span>
+        <input aria-label="線・文字色" onChange={(event) => setColor(event.target.value)} type="color" value={color} />
+      </label>
+      <label className="field color-field">
+        <span>塗り色</span>
+        <input aria-label="塗り色" onChange={(event) => setFillColor(event.target.value)} type="color" value={fillColor} />
+      </label>
+      <label className="field">
+        <span>線幅</span>
+        <input
+          max="40"
+          min="1"
+          onChange={(event) => setStrokeWidth(Number(event.target.value))}
+          type="range"
+          value={strokeWidth}
+        />
+        <strong className="value-chip">{strokeWidth}px</strong>
+      </label>
+      <label className="field">
+        <span>線種</span>
+        <select onChange={(event) => setBrushKind(event.target.value as BrushKind)} value={brushKind}>
+          <option value="normal">通常線</option>
+          <option value="pressure">圧力で太く</option>
+        </select>
+      </label>
+      <label className="field">
+        <span>フォント</span>
+        <select onChange={(event) => setFontFamily(event.target.value)} value={fontFamily}>
+          {FONT_OPTIONS.map((font) => (
+            <option key={font} value={font}>
+              {font}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="selection-card">
+        <span>選択中</span>
+        <strong>{selectedObject ? selectedObject.type || "オブジェクト" : "なし"}</strong>
+      </div>
+    </section>
+  );
+
+  const canvasPanel = () => (
+    <section className="canvas-area" aria-label="編集キャンバス">
+      <div className="canvas-panel" onClick={handleCanvasClick} ref={canvasPanelRef}>
+        <div className="canvas-stage">
+          <canvas ref={canvasElementRef} />
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <main className="app-shell">
-      <header className="app-header">
-        <div className="brand-block">
-          <div className="brand-mark">
-            <Layers size={20} />
-          </div>
-          <div>
-            <h1>GazouEditor</h1>
-            <p>{message}</p>
-          </div>
-        </div>
-        <button className="export-button" onClick={exportPng} type="button">
-          <Download size={18} />
-          <span>PNG書き出し</span>
+      <nav className="mobile-tabs" aria-label="パネル切り替え">
+        <button
+          className={`mobile-tab ${mobilePanel === "canvas" ? "is-active" : ""}`}
+          onClick={() => setMobilePanel("canvas")}
+          type="button"
+        >
+          キャンバス
         </button>
-      </header>
+        <button
+          className={`mobile-tab ${mobilePanel === "layers" ? "is-active" : ""}`}
+          onClick={() => setMobilePanel("layers")}
+          type="button"
+        >
+          レイヤー
+        </button>
+        <button
+          className={`mobile-tab ${mobilePanel === "props" ? "is-active" : ""}`}
+          onClick={() => setMobilePanel("props")}
+          type="button"
+        >
+          スタイル
+        </button>
+      </nav>
 
-      <section className="workspace">
-        <aside className="tool-rail" aria-label="ツール">
-          <input
-            ref={baseInputRef}
-            accept="image/*"
-            className="file-input"
-            onChange={handleBaseImage}
-            type="file"
-          />
-          <input
-            ref={imageInputRef}
-            accept="image/*"
-            className="file-input"
-            onChange={handleAddImage}
-            type="file"
-          />
-          <div className="tool-group">
-            <IconButton label="ベース読込" onClick={() => baseInputRef.current?.click()} tone="primary">
-              <Upload size={19} />
-            </IconButton>
-            <IconButton active={tool === "select"} label="選択" onClick={() => setToolAndMessage("select")}>
-              <MousePointer2 size={19} />
-            </IconButton>
-          </div>
-
-          <div className="tool-group">
-            <IconButton label="画像追加" onClick={() => imageInputRef.current?.click()}>
-              <ImagePlus size={19} />
-            </IconButton>
-            <IconButton label="テキスト" onClick={addTextbox}>
-              <Type size={19} />
-            </IconButton>
-            <IconButton label="四角形" onClick={addRectangle}>
-              <Square size={19} />
-            </IconButton>
-            <IconButton label="円" onClick={addCircle}>
-              <CircleIcon size={19} />
-            </IconButton>
-            <IconButton active={tool === "line"} label="直線" onClick={startLineTool}>
-              <Slash size={19} />
-            </IconButton>
-          </div>
-
-          <div className="tool-group">
-            <IconButton active={tool === "pen"} label="ペン" onClick={() => setToolAndMessage("pen")}>
-              <Brush size={19} />
-            </IconButton>
-            <IconButton active={tool === "bucket"} label="バケツ" onClick={() => setToolAndMessage("bucket")}>
-              <PaintBucket size={19} />
-            </IconButton>
-            <IconButton label="削除" onClick={deleteSelectedObject} tone="danger">
-              <Trash2 size={19} />
-            </IconButton>
-          </div>
-        </aside>
-
-        <section className="canvas-area" aria-label="編集キャンバス">
-          <div className="canvas-meta">
-            <div>
-              <span className="meta-label">編集中</span>
-              <strong>{activeLayer?.name || "レイヤー未選択"}</strong>
-            </div>
-            <div>
-              <span className="meta-label">ツール</span>
-              <strong>{tool === "select" ? "選択" : tool}</strong>
-            </div>
-          </div>
-          <div className="canvas-panel" onClick={handleCanvasClick} ref={canvasPanelRef}>
-            <div className="canvas-stage">
-              <canvas ref={canvasElementRef} />
-            </div>
-          </div>
-        </section>
-
+      <div className="layout-shell">
+      <section className={`workspace ${mobilePanel}`}>
+        {toolPanel()}
+        {canvasPanel()}
         <aside className="inspector">
-          <section className="panel">
-            <div className="panel-title">
-              <div>
-                <span className="eyebrow">Stack</span>
-                <h2>レイヤー</h2>
-              </div>
-              <button className="small-icon-button" onClick={addLayer} title="レイヤー追加" type="button">
-                <Plus size={17} />
-                <span>追加</span>
-              </button>
-            </div>
-            <div className="layer-list">
-              {layers.map((layer) => (
-                <div
-                  className={`layer-row ${activeLayerId === layer.id ? "selected" : ""} ${
-                    layer.role === "base" ? "locked" : ""
-                  }`}
-                  key={layer.id}
-                >
-                  <button
-                    className="layer-name"
-                    disabled={layer.role === "base"}
-                    onClick={() => setActiveLayerId(layer.id)}
-                    type="button"
-                  >
-                    {layer.role === "base" ? <Lock size={15} /> : <Shapes size={15} />}
-                    {layerLabel(layer)}
-                  </button>
-                  <button
-                    aria-label={layer.visible ? `${layer.name}を非表示` : `${layer.name}を表示`}
-                    className="mini-button"
-                    onClick={() => toggleLayerVisibility(layer.id)}
-                    title={layer.visible ? "非表示" : "表示"}
-                    type="button"
-                  >
-                    {layer.visible ? <Eye size={15} /> : <EyeOff size={15} />}
-                  </button>
-                  <button className="mini-button" disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, -1)} type="button">
-                    ↑
-                  </button>
-                  <button className="mini-button" disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, 1)} type="button">
-                    ↓
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-title">
-              <div>
-                <span className="eyebrow">Style</span>
-                <h2>プロパティ</h2>
-              </div>
-            </div>
-            <label className="field color-field">
-              <span>線・文字色</span>
-              <input aria-label="線・文字色" onChange={(event) => setColor(event.target.value)} type="color" value={color} />
-            </label>
-            <label className="field color-field">
-              <span>塗り色</span>
-              <input aria-label="塗り色" onChange={(event) => setFillColor(event.target.value)} type="color" value={fillColor} />
-            </label>
-            <label className="field">
-              <span>線幅</span>
-              <input
-                max="40"
-                min="1"
-                onChange={(event) => setStrokeWidth(Number(event.target.value))}
-                type="range"
-                value={strokeWidth}
-              />
-              <strong className="value-chip">{strokeWidth}px</strong>
-            </label>
-            <label className="field">
-              <span>線種</span>
-              <select onChange={(event) => setBrushKind(event.target.value as BrushKind)} value={brushKind}>
-                <option value="normal">通常線</option>
-                <option value="pressure">停止で太い線</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>フォント</span>
-              <select onChange={(event) => setFontFamily(event.target.value)} value={fontFamily}>
-                {FONT_OPTIONS.map((font) => (
-                  <option key={font} value={font}>
-                    {font}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="selection-card">
-              <span>選択中</span>
-              <strong>{selectedObject ? selectedObject.type || "オブジェクト" : "なし"}</strong>
-            </div>
-          </section>
+          {layerPanel()}
+          {propsPanel()}
         </aside>
       </section>
+      </div>
     </main>
   );
 }
