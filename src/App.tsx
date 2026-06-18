@@ -168,6 +168,7 @@ function floodFillMask(
 
 export default function App() {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasPanelRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<Canvas | null>(null);
   const baseInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -184,6 +185,15 @@ export default function App() {
   const [brushKind, setBrushKind] = useState<BrushKind>("normal");
   const [selectedObject, setSelectedObject] = useState<LayeredObject | null>(null);
   const [message, setMessage] = useState("ベース画像を読み込んで編集を開始します。");
+
+  const centerCanvasInPanel = useCallback(() => {
+    const panel = canvasPanelRef.current;
+    if (!panel) {
+      return;
+    }
+    panel.scrollLeft = Math.max(0, (panel.scrollWidth - panel.clientWidth) / 2);
+    panel.scrollTop = Math.max(0, (panel.scrollHeight - panel.clientHeight) / 2);
+  }, []);
 
   const activeLayer = useMemo(
     () => layers.find((layer) => layer.id === activeLayerId),
@@ -361,13 +371,18 @@ export default function App() {
           canvas.remove(object);
         }
       });
+      canvas.setDimensions({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      });
       const fabricImage = new FabricImage(image) as LayeredObject;
-      const scale = Math.min(CANVAS_WIDTH / image.width, CANVAS_HEIGHT / image.height, 1);
       fabricImage.set({
-        left: (CANVAS_WIDTH - image.width * scale) / 2,
-        top: (CANVAS_HEIGHT - image.height * scale) / 2,
-        scaleX: scale,
-        scaleY: scale,
+        left: image.naturalWidth / 2,
+        top: image.naturalHeight / 2,
+        originX: "center",
+        originY: "center",
+        scaleX: 1,
+        scaleY: 1,
       });
       fabricImage.layerId = BASE_LAYER_ID;
       fabricImage.role = "base";
@@ -375,7 +390,11 @@ export default function App() {
       makeObjectSelectable(fabricImage, false);
       canvas.add(fabricImage);
       reorderCanvasObjects(canvas);
-      setMessage("ベース画像を読み込みました。");
+      setMessage(`ベース画像を読み込みました。キャンバスサイズ: ${image.naturalWidth} x ${image.naturalHeight}`);
+      requestAnimationFrame(() => {
+        centerCanvasInPanel();
+        requestAnimationFrame(centerCanvasInPanel);
+      });
     });
     event.target.value = "";
   };
@@ -685,8 +704,10 @@ export default function App() {
           </button>
         </aside>
 
-        <div className="canvas-panel" onClick={handleCanvasClick}>
-          <canvas ref={canvasElementRef} />
+        <div className="canvas-panel" onClick={handleCanvasClick} ref={canvasPanelRef}>
+          <div className="canvas-stage">
+            <canvas ref={canvasElementRef} />
+          </div>
         </div>
 
         <aside className="side-panel">
