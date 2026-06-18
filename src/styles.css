@@ -1,0 +1,267 @@
+:root {
+  color: #202124;
+  background: #eef1f4;
+  font-family:
+    Inter, "Yu Gothic", "Meiryo", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  min-height: 36px;
+  border: 1px solid #c8ced7;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #202124;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #2563eb;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #d7dce3;
+  background: #ffffff;
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.top-bar p {
+  margin: 4px 0 0;
+  color: #5f6876;
+  font-size: 14px;
+}
+
+.primary-action {
+  padding: 0 16px;
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) 320px;
+  gap: 16px;
+  padding: 16px;
+  min-height: 0;
+  flex: 1;
+}
+
+.toolbar,
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toolbar {
+  align-self: start;
+}
+
+.toolbar button,
+.panel-heading button,
+.layer-row button {
+  width: 100%;
+}
+
+.toolbar button.active {
+  border-color: #1d4ed8;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.file-input {
+  display: none;
+}
+
+.canvas-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  min-width: 0;
+  min-height: 680px;
+  border: 1px solid #cfd6df;
+  background:
+    linear-gradient(45deg, #d9dee6 25%, transparent 25%),
+    linear-gradient(-45deg, #d9dee6 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9dee6 75%),
+    linear-gradient(-45deg, transparent 75%, #d9dee6 75%);
+  background-color: #f7f8fa;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0;
+  background-size: 20px 20px;
+}
+
+.canvas-container {
+  box-shadow: 0 10px 24px rgb(15 23 42 / 18%);
+}
+
+.side-panel {
+  min-width: 0;
+}
+
+.side-panel section {
+  padding: 14px;
+  border: 1px solid #d7dce3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.side-panel h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.panel-heading h2 {
+  margin: 0;
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.layer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 36px 36px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid #d7dce3;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.layer-row.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.layer-row.locked {
+  background: #f3f4f6;
+}
+
+.layer-name {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+label {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  color: #3d4653;
+  font-size: 14px;
+}
+
+input[type="color"] {
+  width: 100%;
+  height: 34px;
+  padding: 2px;
+}
+
+input[type="range"],
+select {
+  width: 100%;
+}
+
+.selection-summary {
+  padding: 10px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #3d4653;
+  font-size: 14px;
+}
+
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+
+  .side-panel {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .top-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .side-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas-panel {
+    justify-content: flex-start;
+    min-height: 420px;
+  }
+}

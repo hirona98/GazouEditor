@@ -39,6 +39,13 @@ ScaffoldingReadMe.txt
 # dotenv environment variables file
 .env
 
+# Node / Vite
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
 # Others
 ~$*
 *~

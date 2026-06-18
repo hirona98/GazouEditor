@@ -1,0 +1,776 @@
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Canvas,
+  Circle,
+  FabricImage,
+  FabricObject,
+  FabricText,
+  Line,
+  PencilBrush,
+  Point,
+  Rect,
+  Textbox,
+} from "fabric";
+
+type LayerRole = "edit" | "base";
+type Tool = "select" | "image" | "text" | "rect" | "circle" | "line" | "pen" | "bucket";
+type BrushKind = "normal" | "pressure";
+
+type EditorLayer = {
+  id: string;
+  name: string;
+  role: LayerRole;
+  visible: boolean;
+};
+
+type LayeredObject = FabricObject & {
+  layerId?: string;
+  role?: LayerRole;
+  objectKind?: string;
+};
+
+const CANVAS_WIDTH = 960;
+const CANVAS_HEIGHT = 640;
+const BASE_LAYER_ID = "base-layer";
+const LOWER_LAYER_ID = "lower-layer";
+const UPPER_LAYER_ID = "upper-layer";
+
+const INITIAL_LAYERS: EditorLayer[] = [
+  { id: UPPER_LAYER_ID, name: "上側編集レイヤー", role: "edit", visible: true },
+  { id: BASE_LAYER_ID, name: "ベースレイヤー", role: "base", visible: true },
+  { id: LOWER_LAYER_ID, name: "下側編集レイヤー", role: "edit", visible: true },
+];
+
+const FONT_OPTIONS = [
+  "sans-serif",
+  "serif",
+  "monospace",
+  "Yu Gothic",
+  "Meiryo",
+  "Noto Sans JP",
+];
+
+function isLayeredObject(object: FabricObject): object is LayeredObject {
+  return "layerId" in object || "role" in object;
+}
+
+function makeObjectSelectable(object: LayeredObject, selectable: boolean) {
+  object.set({
+    selectable,
+    evented: selectable,
+    lockMovementX: !selectable,
+    lockMovementY: !selectable,
+    lockScalingX: !selectable,
+    lockScalingY: !selectable,
+    lockRotation: !selectable,
+    hasControls: selectable,
+    hasBorders: selectable,
+  });
+}
+
+function getLayerIndex(layers: EditorLayer[], layerId: string) {
+  const index = layers.findIndex((layer) => layer.id === layerId);
+  return index === -1 ? layers.length : index;
+}
+
+function fitTextToBox(textbox: Textbox) {
+  const minSize = 8;
+  const maxSize = 96;
+  const width = textbox.width || 160;
+  const height = textbox.height || 48;
+  const textLength = Math.max(textbox.text?.length || 1, 1);
+  const byWidth = Math.floor((width / textLength) * 1.8);
+  const byHeight = Math.floor(height * 0.72);
+  const nextSize = Math.max(minSize, Math.min(maxSize, byWidth, byHeight));
+  textbox.set({ fontSize: nextSize });
+}
+
+function layerLabel(layer: EditorLayer) {
+  return layer.role === "base" ? `${layer.name} 固定` : layer.name;
+}
+
+function hexToRgba(hex: string) {
+  const value = hex.replace("#", "");
+  const normalized =
+    value.length === 3
+      ? value
+          .split("")
+          .map((character) => `${character}${character}`)
+          .join("")
+      : value;
+  const number = Number.parseInt(normalized, 16);
+  return {
+    r: (number >> 16) & 255,
+    g: (number >> 8) & 255,
+    b: number & 255,
+    a: 255,
+  };
+}
+
+function isSameColor(data: Uint8ClampedArray, index: number, target: ReturnType<typeof hexToRgba>) {
+  return (
+    data[index] === target.r &&
+    data[index + 1] === target.g &&
+    data[index + 2] === target.b &&
+    data[index + 3] === target.a
+  );
+}
+
+function floodFillMask(
+  source: ImageData,
+  startX: number,
+  startY: number,
+  fillColor: ReturnType<typeof hexToRgba>,
+) {
+  const { width, height, data } = source;
+  const startIndex = (startY * width + startX) * 4;
+  const target = {
+    r: data[startIndex],
+    g: data[startIndex + 1],
+    b: data[startIndex + 2],
+    a: data[startIndex + 3],
+  };
+  const output = new ImageData(width, height);
+
+  if (isSameColor(data, startIndex, fillColor)) {
+    return output;
+  }
+
+  const visited = new Uint8Array(width * height);
+  const stack: Array<[number, number]> = [[startX, startY]];
+
+  while (stack.length > 0) {
+    const [x, y] = stack.pop() as [number, number];
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+      continue;
+    }
+    const pixel = y * width + x;
+    if (visited[pixel]) {
+      continue;
+    }
+    visited[pixel] = 1;
+
+    const index = pixel * 4;
+    if (!isSameColor(data, index, target)) {
+      continue;
+    }
+
+    output.data[index] = fillColor.r;
+    output.data[index + 1] = fillColor.g;
+    output.data[index + 2] = fillColor.b;
+    output.data[index + 3] = fillColor.a;
+
+    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+  }
+
+  return output;
+}
+
+export default function App() {
+  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<Canvas | null>(null);
+  const baseInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const lineStartRef = useRef<Point | null>(null);
+  const layerIdCounterRef = useRef(1);
+
+  const [layers, setLayers] = useState<EditorLayer[]>(INITIAL_LAYERS);
+  const [activeLayerId, setActiveLayerId] = useState(UPPER_LAYER_ID);
+  const [tool, setTool] = useState<Tool>("select");
+  const [color, setColor] = useState("#ef4444");
+  const [fillColor, setFillColor] = useState("#facc15");
+  const [strokeWidth, setStrokeWidth] = useState(6);
+  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0]);
+  const [brushKind, setBrushKind] = useState<BrushKind>("normal");
+  const [selectedObject, setSelectedObject] = useState<LayeredObject | null>(null);
+  const [message, setMessage] = useState("ベース画像を読み込んで編集を開始します。");
+
+  const activeLayer = useMemo(
+    () => layers.find((layer) => layer.id === activeLayerId),
+    [activeLayerId, layers],
+  );
+
+  const reorderCanvasObjects = useCallback(
+    (canvas: Canvas, nextLayers = layers) => {
+      const objects = canvas.getObjects() as LayeredObject[];
+      objects.sort((a, b) => {
+        const aIndex = getLayerIndex(nextLayers, a.layerId || "");
+        const bIndex = getLayerIndex(nextLayers, b.layerId || "");
+        return bIndex - aIndex;
+      });
+      objects.forEach((object) => canvas.bringObjectToFront(object));
+      canvas.requestRenderAll();
+    },
+    [layers],
+  );
+
+  const syncLayerVisibility = useCallback(
+    (nextLayers = layers) => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return;
+      }
+      const visibility = new Map(nextLayers.map((layer) => [layer.id, layer.visible]));
+      canvas.getObjects().forEach((object) => {
+        if (!isLayeredObject(object)) {
+          return;
+        }
+        object.set({ visible: visibility.get(object.layerId || "") ?? true });
+      });
+      reorderCanvasObjects(canvas, nextLayers);
+    },
+    [layers, reorderCanvasObjects],
+  );
+
+  const addObjectToActiveLayer = useCallback(
+    (object: LayeredObject) => {
+      const canvas = canvasRef.current;
+      if (!canvas || !activeLayer || activeLayer.role !== "edit") {
+        setMessage("編集レイヤーを選択してください。");
+        return;
+      }
+      object.layerId = activeLayer.id;
+      object.role = "edit";
+      object.set({ visible: activeLayer.visible });
+      makeObjectSelectable(object, true);
+      canvas.add(object);
+      canvas.setActiveObject(object);
+      reorderCanvasObjects(canvas);
+      setSelectedObject(object);
+    },
+    [activeLayer, reorderCanvasObjects],
+  );
+
+  useEffect(() => {
+    const element = canvasElementRef.current;
+    if (!element) {
+      return;
+    }
+
+    const canvas = new Canvas(element, {
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
+      backgroundColor: "#ffffff",
+      preserveObjectStacking: true,
+      selection: true,
+    });
+    canvasRef.current = canvas;
+
+    canvas.on("selection:created", (event) => {
+      setSelectedObject((event.selected?.[0] as LayeredObject | undefined) || null);
+    });
+    canvas.on("selection:updated", (event) => {
+      setSelectedObject((event.selected?.[0] as LayeredObject | undefined) || null);
+    });
+    canvas.on("selection:cleared", () => {
+      setSelectedObject(null);
+    });
+    canvas.on("object:scaling", (event) => {
+      const target = event.target as Textbox | undefined;
+      if (target?.type === "textbox") {
+        const scaledWidth = (target.width || 160) * (target.scaleX || 1);
+        const scaledHeight = (target.height || 48) * (target.scaleY || 1);
+        target.set({ width: scaledWidth, height: scaledHeight, scaleX: 1, scaleY: 1 });
+        fitTextToBox(target);
+        target.setCoords();
+      }
+    });
+    canvas.on("text:changed", (event) => {
+      const target = event.target as Textbox | undefined;
+      if (target?.type === "textbox") {
+        fitTextToBox(target);
+        canvas.requestRenderAll();
+      }
+    });
+
+    return () => {
+      canvas.dispose();
+      canvasRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    canvas.isDrawingMode = tool === "pen";
+    canvas.selection = tool === "select";
+    canvas.defaultCursor = tool === "bucket" ? "crosshair" : "default";
+    canvas.getObjects().forEach((object) => {
+      if (!isLayeredObject(object)) {
+        return;
+      }
+      makeObjectSelectable(object, tool === "select" && object.role !== "base");
+    });
+
+    if (tool === "pen") {
+      const brush = new PencilBrush(canvas);
+      brush.color = color;
+      brush.width = brushKind === "pressure" ? strokeWidth + 6 : strokeWidth;
+      canvas.freeDrawingBrush = brush;
+    }
+
+    canvas.requestRenderAll();
+  }, [tool, color, strokeWidth, brushKind]);
+
+  useEffect(() => {
+    syncLayerVisibility(layers);
+  }, [layers, syncLayerVisibility]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const object = selectedObject;
+    if (!canvas || !object || object.role === "base") {
+      return;
+    }
+    if (object.type === "textbox") {
+      object.set({ fill: color, fontFamily });
+      fitTextToBox(object as Textbox);
+    }
+    if (object.type === "path" || object.type === "line") {
+      object.set({ stroke: color, strokeWidth });
+    }
+    if (object.type === "rect" || object.type === "circle") {
+      object.set({ fill: fillColor, stroke: color, strokeWidth });
+    }
+    canvas.requestRenderAll();
+  }, [color, fillColor, fontFamily, selectedObject, strokeWidth]);
+
+  const readImageFile = (file: File, callback: (image: HTMLImageElement) => void) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => callback(image);
+      image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleBaseImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    const canvas = canvasRef.current;
+    if (!file || !canvas) {
+      return;
+    }
+
+    readImageFile(file, (image) => {
+      canvas.getObjects().forEach((object) => {
+        if (isLayeredObject(object) && object.role === "base") {
+          canvas.remove(object);
+        }
+      });
+      const fabricImage = new FabricImage(image) as LayeredObject;
+      const scale = Math.min(CANVAS_WIDTH / image.width, CANVAS_HEIGHT / image.height, 1);
+      fabricImage.set({
+        left: (CANVAS_WIDTH - image.width * scale) / 2,
+        top: (CANVAS_HEIGHT - image.height * scale) / 2,
+        scaleX: scale,
+        scaleY: scale,
+      });
+      fabricImage.layerId = BASE_LAYER_ID;
+      fabricImage.role = "base";
+      fabricImage.objectKind = "base-image";
+      makeObjectSelectable(fabricImage, false);
+      canvas.add(fabricImage);
+      reorderCanvasObjects(canvas);
+      setMessage("ベース画像を読み込みました。");
+    });
+    event.target.value = "";
+  };
+
+  const handleAddImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    readImageFile(file, (image) => {
+      const fabricImage = new FabricImage(image) as LayeredObject;
+      const scale = Math.min(260 / image.width, 220 / image.height, 1);
+      fabricImage.set({
+        left: 160,
+        top: 120,
+        scaleX: scale,
+        scaleY: scale,
+      });
+      addObjectToActiveLayer(fabricImage);
+    });
+    event.target.value = "";
+  };
+
+  const addTextbox = () => {
+    const textbox = new Textbox("テキスト", {
+      left: 180,
+      top: 160,
+      width: 220,
+      height: 64,
+      fill: color,
+      fontFamily,
+      fontSize: 32,
+      editable: true,
+    }) as LayeredObject;
+    textbox.objectKind = "text";
+    addObjectToActiveLayer(textbox);
+  };
+
+  const addRectangle = () => {
+    addObjectToActiveLayer(
+      new Rect({
+        left: 180,
+        top: 160,
+        width: 180,
+        height: 110,
+        fill: fillColor,
+        stroke: color,
+        strokeWidth,
+      }) as LayeredObject,
+    );
+  };
+
+  const addCircle = () => {
+    addObjectToActiveLayer(
+      new Circle({
+        left: 200,
+        top: 160,
+        radius: 70,
+        fill: fillColor,
+        stroke: color,
+        strokeWidth,
+      }) as LayeredObject,
+    );
+  };
+
+  const startLineTool = () => {
+    setTool("line");
+    setMessage("キャンバス上で始点と終点を順にクリックします。");
+  };
+
+  const addLayer = () => {
+    const id = `edit-layer-${layerIdCounterRef.current}`;
+    layerIdCounterRef.current += 1;
+    const layer: EditorLayer = {
+      id,
+      name: `編集レイヤー ${layerIdCounterRef.current}`,
+      role: "edit",
+      visible: true,
+    };
+    setLayers((current) => {
+      const baseIndex = current.findIndex((item) => item.id === BASE_LAYER_ID);
+      const next = [...current];
+      next.splice(Math.max(baseIndex, 0), 0, layer);
+      return next;
+    });
+    setActiveLayerId(id);
+  };
+
+  const moveLayer = (layerId: string, direction: -1 | 1) => {
+    setLayers((current) => {
+      const index = current.findIndex((layer) => layer.id === layerId);
+      const targetIndex = index + direction;
+      if (index === -1 || targetIndex < 0 || targetIndex >= current.length) {
+        return current;
+      }
+      if (current[index].role === "base" || current[targetIndex].role === "base") {
+        return current;
+      }
+      const next = [...current];
+      const [layer] = next.splice(index, 1);
+      next.splice(targetIndex, 0, layer);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        reorderCanvasObjects(canvas, next);
+      }
+      return next;
+    });
+  };
+
+  const toggleLayerVisibility = (layerId: string) => {
+    setLayers((current) =>
+      current.map((layer) =>
+        layer.id === layerId ? { ...layer, visible: !layer.visible } : layer,
+      ),
+    );
+  };
+
+  const deleteSelectedObject = () => {
+    const canvas = canvasRef.current;
+    const object = canvas?.getActiveObject() as LayeredObject | undefined;
+    if (!canvas || !object || object.role === "base") {
+      return;
+    }
+    canvas.remove(object);
+    canvas.discardActiveObject();
+    setSelectedObject(null);
+    canvas.requestRenderAll();
+  };
+
+  const fillBucketAt = (x: number, y: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !activeLayer || activeLayer.role !== "edit") {
+      setMessage("編集レイヤーを選択してください。");
+      return;
+    }
+
+    const objects = canvas.getObjects() as LayeredObject[];
+    const visibility = objects.map((object) => object.visible);
+    const backgroundColor = canvas.backgroundColor;
+    canvas.discardActiveObject();
+    canvas.set({ backgroundColor: "" });
+    objects.forEach((object) => {
+      object.set({ visible: object.layerId === activeLayer.id });
+    });
+    canvas.renderAll();
+
+    const snapshot = canvas.toCanvasElement(1);
+    objects.forEach((object, index) => {
+      object.set({ visible: visibility[index] });
+    });
+    canvas.set({ backgroundColor });
+    canvas.renderAll();
+
+    const context = snapshot.getContext("2d", { willReadFrequently: true });
+    if (!context) {
+      return;
+    }
+
+    const startX = Math.max(0, Math.min(snapshot.width - 1, Math.floor(x)));
+    const startY = Math.max(0, Math.min(snapshot.height - 1, Math.floor(y)));
+    const source = context.getImageData(0, 0, snapshot.width, snapshot.height);
+    const output = floodFillMask(source, startX, startY, hexToRgba(fillColor));
+    const outputCanvas = document.createElement("canvas");
+    outputCanvas.width = snapshot.width;
+    outputCanvas.height = snapshot.height;
+    outputCanvas.getContext("2d")?.putImageData(output, 0, 0);
+
+    const fill = new FabricImage(outputCanvas, {
+      left: 0,
+      top: 0,
+    }) as LayeredObject;
+    fill.objectKind = "bucket-fill";
+    addObjectToActiveLayer(fill);
+  };
+
+  const handleCanvasClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const rect = canvas.getElement().getBoundingClientRect();
+    const point = new Point(event.clientX - rect.left, event.clientY - rect.top);
+
+    if (tool === "line") {
+      if (!lineStartRef.current) {
+        lineStartRef.current = point;
+        return;
+      }
+      const line = new Line(
+        [lineStartRef.current.x, lineStartRef.current.y, point.x, point.y],
+        {
+          stroke: color,
+          strokeWidth,
+          strokeLineCap: "round",
+          strokeLineJoin: "round",
+        },
+      ) as LayeredObject;
+      line.objectKind = "line";
+      addObjectToActiveLayer(line);
+      lineStartRef.current = null;
+      setTool("select");
+    }
+
+    if (tool === "bucket") {
+      fillBucketAt(point.x, point.y);
+    }
+  };
+
+  const exportPng = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    canvas.discardActiveObject();
+    canvas.requestRenderAll();
+    const dataUrl = canvas.toDataURL({
+      format: "png",
+      multiplier: 1,
+    });
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = "gazou-editor.png";
+    link.click();
+  };
+
+  const setToolAndMessage = (nextTool: Tool) => {
+    setTool(nextTool);
+    lineStartRef.current = null;
+    if (nextTool === "pen") {
+      setMessage("ドラッグまたはタッチで線を描きます。");
+    } else if (nextTool === "bucket") {
+      setMessage("塗りつぶしたい場所をクリックします。");
+    } else {
+      setMessage("オブジェクトを選択して編集します。");
+    }
+  };
+
+  return (
+    <main className="app-shell">
+      <header className="top-bar">
+        <div>
+          <h1>GazouEditor</h1>
+          <p>{message}</p>
+        </div>
+        <button className="primary-action" onClick={exportPng} type="button">
+          PNG書き出し
+        </button>
+      </header>
+
+      <section className="workspace">
+        <aside className="toolbar" aria-label="ツール">
+          <input
+            ref={baseInputRef}
+            accept="image/*"
+            className="file-input"
+            onChange={handleBaseImage}
+            type="file"
+          />
+          <input
+            ref={imageInputRef}
+            accept="image/*"
+            className="file-input"
+            onChange={handleAddImage}
+            type="file"
+          />
+          <button onClick={() => baseInputRef.current?.click()} type="button">
+            ベース読込
+          </button>
+          <button
+            className={tool === "select" ? "active" : ""}
+            onClick={() => setToolAndMessage("select")}
+            type="button"
+          >
+            選択
+          </button>
+          <button onClick={() => imageInputRef.current?.click()} type="button">
+            画像追加
+          </button>
+          <button onClick={addTextbox} type="button">
+            テキスト
+          </button>
+          <button onClick={addRectangle} type="button">
+            四角形
+          </button>
+          <button onClick={addCircle} type="button">
+            円
+          </button>
+          <button className={tool === "line" ? "active" : ""} onClick={startLineTool} type="button">
+            直線
+          </button>
+          <button
+            className={tool === "pen" ? "active" : ""}
+            onClick={() => setToolAndMessage("pen")}
+            type="button"
+          >
+            ペン
+          </button>
+          <button
+            className={tool === "bucket" ? "active" : ""}
+            onClick={() => setToolAndMessage("bucket")}
+            type="button"
+          >
+            バケツ
+          </button>
+          <button onClick={deleteSelectedObject} type="button">
+            削除
+          </button>
+        </aside>
+
+        <div className="canvas-panel" onClick={handleCanvasClick}>
+          <canvas ref={canvasElementRef} />
+        </div>
+
+        <aside className="side-panel">
+          <section>
+            <div className="panel-heading">
+              <h2>レイヤー</h2>
+              <button onClick={addLayer} type="button">
+                追加
+              </button>
+            </div>
+            <div className="layer-list">
+              {layers.map((layer) => (
+                <div
+                  className={`layer-row ${activeLayerId === layer.id ? "selected" : ""} ${
+                    layer.role === "base" ? "locked" : ""
+                  }`}
+                  key={layer.id}
+                >
+                  <button
+                    className="layer-name"
+                    disabled={layer.role === "base"}
+                    onClick={() => setActiveLayerId(layer.id)}
+                    type="button"
+                  >
+                    {layerLabel(layer)}
+                  </button>
+                  <button onClick={() => toggleLayerVisibility(layer.id)} type="button">
+                    {layer.visible ? "表示" : "非表示"}
+                  </button>
+                  <button disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, -1)} type="button">
+                    ↑
+                  </button>
+                  <button disabled={layer.role === "base"} onClick={() => moveLayer(layer.id, 1)} type="button">
+                    ↓
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2>プロパティ</h2>
+            <label>
+              線・文字色
+              <input onChange={(event) => setColor(event.target.value)} type="color" value={color} />
+            </label>
+            <label>
+              塗り色
+              <input onChange={(event) => setFillColor(event.target.value)} type="color" value={fillColor} />
+            </label>
+            <label>
+              線幅
+              <input
+                max="40"
+                min="1"
+                onChange={(event) => setStrokeWidth(Number(event.target.value))}
+                type="range"
+                value={strokeWidth}
+              />
+              <span>{strokeWidth}px</span>
+            </label>
+            <label>
+              線種
+              <select onChange={(event) => setBrushKind(event.target.value as BrushKind)} value={brushKind}>
+                <option value="normal">通常線</option>
+                <option value="pressure">停止で太い線</option>
+              </select>
+            </label>
+            <label>
+              フォント
+              <select onChange={(event) => setFontFamily(event.target.value)} value={fontFamily}>
+                {FONT_OPTIONS.map((font) => (
+                  <option key={font} value={font}>
+                    {font}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="selection-summary">
+              選択中: {selectedObject ? selectedObject.type || "オブジェクト" : "なし"}
+            </div>
+          </section>
+        </aside>
+      </section>
+    </main>
+  );
+}
