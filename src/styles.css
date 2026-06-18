@@ -51,6 +51,11 @@ button:disabled {
   background: var(--bg);
 }
 
+.app-shell.cursor-text-mode .canvas-panel,
+.app-shell.cursor-text-mode .canvas-panel * {
+  cursor: text !important;
+}
+
 .primary-button {
   display: inline-flex;
   align-items: center;
@@ -222,10 +227,24 @@ button:disabled {
   display: grid;
   place-items: center;
   min-height: 420px;
+  cursor: default;
+  position: relative;
+}
+
+.canvas-panel.is-text-tool {
+  cursor: text;
+}
+
+.canvas-panel.is-text-tool canvas {
+  cursor: text;
 }
 
 .canvas-panel:active {
-  cursor: crosshair;
+  cursor: inherit;
+}
+
+.canvas-panel.is-text-tool:active {
+  cursor: text;
 }
 
 .canvas-stage {

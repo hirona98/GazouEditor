@@ -339,19 +339,31 @@ export default function App() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    const panel = canvasPanelRef.current;
+    const canvasElement = canvasElementRef.current;
     if (!canvas) {
       return;
     }
+    const cursor = tool === "text" ? "text" : tool === "bucket" ? "crosshair" : "default";
 
     canvas.isDrawingMode = tool === "pen";
     canvas.selection = tool === "select";
-    canvas.defaultCursor = tool === "bucket" ? "crosshair" : "default";
+    canvas.defaultCursor = tool === "text" ? "text" : tool === "bucket" ? "crosshair" : "default";
+    canvas.hoverCursor = tool === "text" ? "text" : "move";
+    canvas.moveCursor = tool === "text" ? "text" : "move";
     canvas.getObjects().forEach((object) => {
       if (!isLayeredObject(object)) {
         return;
       }
       makeObjectSelectable(object, tool === "select" && object.role !== "base");
     });
+
+    if (panel) {
+      panel.style.cursor = cursor;
+    }
+    if (canvasElement) {
+      canvasElement.style.cursor = cursor;
+    }
 
     if (tool === "pen") {
       const brush = new PencilBrush(canvas);
@@ -456,10 +468,10 @@ export default function App() {
     event.target.value = "";
   };
 
-  const addTextbox = () => {
+  const addTextboxAt = (x: number, y: number) => {
     const textbox = new Textbox("テキスト", {
-      left: 180,
-      top: 160,
+      left: x,
+      top: y,
       width: 220,
       height: 64,
       fill: color,
@@ -469,6 +481,14 @@ export default function App() {
     }) as LayeredObject;
     textbox.objectKind = "text";
     addObjectToActiveLayer(textbox);
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    canvas.setActiveObject(textbox);
+    canvas.requestRenderAll();
+    textbox.enterEditing?.();
   };
 
   const addRectangle = () => {
@@ -641,6 +661,20 @@ export default function App() {
     }
   };
 
+  const handleCanvasDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const rect = canvas.getElement().getBoundingClientRect();
+    const point = new Point(event.clientX - rect.left, event.clientY - rect.top);
+
+    if (tool === "text") {
+      addTextboxAt(point.x, point.y);
+      return;
+    }
+  };
+
   const exportPng = () => {
     const canvas = canvasRef.current;
     if (!canvas) {
@@ -665,6 +699,8 @@ export default function App() {
       setMessage("ドラッグまたはタッチで線を描きます。");
     } else if (nextTool === "bucket") {
       setMessage("塗りつぶしたい場所をクリックします。");
+    } else if (nextTool === "text") {
+      setMessage("キャンバスをダブルクリックしてテキストを追加します。");
     } else {
       setMessage("オブジェクトを選択して編集します。");
     }
@@ -709,7 +745,7 @@ export default function App() {
         <IconButton label="画像追加" onClick={() => imageInputRef.current?.click()}>
           <ImagePlus size={17} />
         </IconButton>
-        <IconButton label="テキスト" onClick={addTextbox}>
+        <IconButton active={tool === "text"} label="テキスト" onClick={() => setToolAndMessage("text")}>
           <Type size={17} />
         </IconButton>
         <IconButton label="四角形" onClick={addRectangle}>
@@ -838,7 +874,12 @@ export default function App() {
 
   const canvasPanel = () => (
     <section className="canvas-area" aria-label="編集キャンバス">
-      <div className="canvas-panel" onClick={handleCanvasClick} ref={canvasPanelRef}>
+      <div
+        className={`canvas-panel ${tool === "text" ? "is-text-tool" : ""}`}
+        onClick={handleCanvasClick}
+        onDoubleClick={handleCanvasDoubleClick}
+        ref={canvasPanelRef}
+      >
         <div className="canvas-stage">
           <canvas ref={canvasElementRef} />
         </div>
@@ -847,7 +888,7 @@ export default function App() {
   );
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${tool === "text" ? "cursor-text-mode" : ""}`}>
       <nav className="mobile-tabs" aria-label="パネル切り替え">
         <button
           className={`mobile-tab ${mobilePanel === "canvas" ? "is-active" : ""}`}
