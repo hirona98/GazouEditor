@@ -2,7 +2,6 @@ import { ChangeEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useSta
 import {
   Brush,
   CircleIcon,
-  Download,
   Eye,
   EyeOff,
   ImagePlus,
@@ -10,13 +9,11 @@ import {
   MousePointer2,
   PaintBucket,
   Plus,
-  Save,
   Shapes,
   Slash,
   Square,
   Trash2,
   Type,
-  Upload,
 } from "lucide-react";
 import {
   Canvas,
@@ -86,7 +83,6 @@ function IconButton({ active = false, children, label, onClick, tone = "default"
       type="button"
     >
       {children}
-      <span>{label}</span>
     </button>
   );
 }
@@ -690,18 +686,19 @@ export default function App() {
         onChange={handleAddImage}
         type="file"
       />
-      <button className="primary-button full-width" onClick={exportPng} type="button">
-        <Upload size={16} />
-        <span>PNG書き出し</span>
+      <button
+        aria-label="SAVE"
+        className="primary-button full-width compact-text"
+        onClick={exportPng}
+        title="SAVE"
+        type="button"
+      >
+        SAVE
       </button>
 
-      <div className="panel-title tool-panel-title">
-        <span>ツール</span>
-      </div>
-
       <div className="tool-group">
-        <IconButton label="ベース読込" onClick={() => baseInputRef.current?.click()} tone="primary">
-          <Download size={17} />
+        <IconButton label="BASE" onClick={() => baseInputRef.current?.click()} tone="primary">
+          <span className="compact-text">LOAD</span>
         </IconButton>
         <IconButton active={tool === "select"} label="選択" onClick={() => setToolAndMessage("select")}>
           <MousePointer2 size={17} />

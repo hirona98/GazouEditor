@@ -56,12 +56,21 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 34px;
+  line-height: 1;
+  padding: 0;
   border-radius: 8px;
   background: var(--accent);
   color: #ffffff;
   border: 1px solid var(--accent);
+}
+
+.compact-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  line-height: 1;
 }
 
 .primary-button:hover {
@@ -126,7 +135,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) minmax(270px, 340px);
+  grid-template-columns: 62px minmax(0, 1fr) minmax(270px, 340px);
   gap: 10px;
 }
 
@@ -143,7 +152,10 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
-  padding: 10px;
+  padding: 8px;
+  align-items: stretch;
+  width: 100%;
+  max-width: 62px;
 }
 
 .tool-group {
@@ -152,30 +164,20 @@ button:disabled {
   gap: 6px;
 }
 
-.tool-panel-title {
-  color: var(--muted);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
 .icon-button {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
+  justify-content: center;
+  gap: 0;
   width: 100%;
-  min-height: 36px;
-  padding: 8px 10px;
+  min-height: 34px;
+  padding: 0;
+  line-height: 1;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: #2f3b47;
   white-space: nowrap;
-}
-
-.icon-button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .icon-button svg {
