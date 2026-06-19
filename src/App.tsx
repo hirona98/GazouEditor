@@ -723,19 +723,19 @@ export default function App() {
         type="file"
       />
       <button
-        aria-label="SAVE"
         className="primary-button full-width compact-text"
         onClick={exportPng}
-        title="SAVE"
+        title="出力"
         type="button"
       >
-        SAVE
+        出力
       </button>
 
       <div className="tool-group">
-        <IconButton label="BASE" onClick={() => baseInputRef.current?.click()} tone="primary">
-          <span className="compact-text">LOAD</span>
+        <IconButton label="開く" onClick={() => baseInputRef.current?.click()} tone="primary">
+          <span className="compact-text">開く</span>
         </IconButton>
+        <div className="tool-separator" />
         <IconButton active={tool === "select"} label="選択" onClick={() => setToolAndMessage("select")}>
           <MousePointer2 size={17} />
         </IconButton>

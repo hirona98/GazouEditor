@@ -169,6 +169,13 @@ button:disabled {
   gap: 6px;
 }
 
+.tool-separator {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 4px;
+  opacity: 0.75;
+}
+
 .icon-button {
   display: flex;
   align-items: center;
